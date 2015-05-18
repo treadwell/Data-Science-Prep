@@ -1,0 +1,38 @@
+---
+title: "EDA with R"
+author: "Ken Brooks"
+date: "May 18, 2015"
+output: pdf_document
+---
+
+How does the price of a diamond vary with carat size? How does it vary with categorical variables like cut, color or clarity?
+
+```{r}
+library(ggplot2)
+library(dplyr)
+data(diamonds)
+
+diamonds %>%
+  ggplot(aes(x=carat, y-price)) +
+  geom_point(alpha = 0.5) +
+  facet_grid(~ cut) +
+  stat_smooth(method = lm, formula = y ~ poly(x,2)) +
+  theme_bw()
+```
+
+Add a feature, volume, and then look at pair-wise plots
+
+```{r, echo=FALSE}
+
+library(GGally)
+
+diamonds %>%
+  mutate(volume = x * y * z) %>%
+  select(cut, carat, price, volume) %>%
+  sample_frac(0.5, replace=TRUE) %>%
+  ggpairs(axisLabels = "none") +
+  theme_bw()
+
+```
+
+
