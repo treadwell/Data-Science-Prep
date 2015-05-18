@@ -1,0 +1,95 @@
+---
+title: "2c Random Projection Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Read FactoMineR documentation and tutorial
+* try running this against raw data (all 45 variables)
+* Bar chart of eigenvalues
+* interpretation of circle chart
+
+Observations
+------------
+* 
+
+```{r packages, warning=FALSE}
+# Load necessary packages 
+
+#library(FactoMineR)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(pracma)
+
+```
+
+```{r ImportData, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+par(mar = c(0, 0, 0, 0))
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+
+set.seed(250)
+```
+
+Random Projection Analysis
+-----------------------------
+
+This analysis implements Random Projections using...
+
+```{r runRP}
+
+d_gs <- gramSchmidt(as.matrix(d))$Q
+
+size(d_gs)
+
+k = 10
+
+rand_matrix <- matrix(sample(c(-1,1),ncol(d)*k,TRUE),nrow=ncol(d),ncol=k)
+
+rand_matrix
+
+d_rp <- d_gs%*%rand_matrix
+d_rp <- 1/sqrt(k)*d_rp
+
+d_rp = data.frame(d_rp)
+str(d_rp)
+
+d_kmeans<- kmeans(d_rp, centers=3, iter.max = 1000)
+#tbl <- table(iris[, 5], iris_kmeans$cluster)
+
+saveRDS(d_rp, "models/Perfect_Order_rp_data.rds")
+
+```
+
+```{r RPTiming}
+
+library(pracma)
+library(microbenchmark)
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+
+# RPcreate = function(d,k) {d_gs <- gramSchmidt(as.matrix(d))$Q
+#                rand_matrix <- matrix(sample(c(-1,1),ncol(d)*k,TRUE),nrow=ncol(d),ncol=k)
+#                d_rp <- d_gs%*%rand_matrix
+#                d_rp <- 1/sqrt(k)*d_rp
+#                return(d_rp)}
+
+trainingTime = microbenchmark(
+
+d_gs = gramSchmidt(as.matrix(d))$Q,
+k = 15,
+rand_matrix = matrix(sample(c(-1,1),ncol(d)*k,TRUE),nrow=ncol(d),ncol=k),
+d_rp = d_gs%*%rand_matrix,
+d_rp = 1/sqrt(k)*d_rp,
+d_rp = data.frame(d_rp),
+
+times = 10L)
+
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+```

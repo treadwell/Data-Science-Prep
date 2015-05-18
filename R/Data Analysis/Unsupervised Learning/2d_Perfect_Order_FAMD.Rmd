@@ -1,0 +1,97 @@
+---
+title: "2d RFE on the Perfect Order Data Set"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* 
+
+Observations
+------------
+* 
+
+```{r packages, warning=FALSE}
+# Load necessary packages 
+
+library(FactoMineR)
+library(lattice)
+library(ggplot2)
+library(caret)
+library("factoextra")
+
+```
+
+```{r ImportData, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+par(mar = c(0, 0, 0, 0))
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+labels = readRDS("models/Perfect_Order_labels.rds")
+
+set.seed(250)
+```
+
+Recursive Feature Elimination
+-----------------------------
+
+This analysis implements Recursive Feature Elimination (RFE) using _caret_[^fn-1] and its rfe() function. RFE involves backward selection of predictors based on predictor importance ranking. The predictors are ranked and the less important ones are sequentially eliminated prior to modeling. While technically this is a wrapper approach around a random forest estimation technique, by later feeding the selection into an ANN, it is being used as a filter approach.
+
+[^fn-1]: Max Kuhn. Contributions from Jed Wing, Steve Weston, Andre Williams, Chris Keefer, Allan Engelhardt, Tony Cooper, Zachary Mayer, Brenton Kenkel, the R Core Team and Michael Benesty. (2014). caret: Classification and Regression Training. R package version 6.0-37. http://CRAN.R-project.org/package=caret
+
+
+```{r featuresRFE, echo=FALSE}
+# define the control using a random forest selection function
+citation("caret")
+control <- rfeControl(functions=rfFuncs, 
+                      method="cv", 
+                      number=3)
+
+# run the RFE algorithm
+rfe.res <- rfe(d, 
+               labels, 
+               sizes=1:ncol(d), 
+               rfeControl=control)
+
+saveRDS(rfe.res, "models/Perfect_Order_rfe_model.rds")
+# warnings()
+# summarize the results
+print(rfe.res)
+# list the chosen features
+predictors(rfe.res)
+# plot the results
+par(mfrow=c(1,1))
+plot(rfe.res, type=c("g", "o"), main = "Recursive Feature Elimination")
+dev.copy(png,'images/Perfect_Order_RFE_Features.png')
+dev.off()
+
+```
+
+
+```{r RFETiming}
+
+library(caret)
+library(microbenchmark)
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+labels = readRDS("models/Perfect_Order_labels.rds")
+
+control <- rfeControl(functions=rfFuncs, 
+                      method="cv",
+                      number = 3)
+
+trainingTime = microbenchmark(
+
+# run the RFE algorithm
+trash <- rfe(d, 
+               labels, 
+               sizes=1:ncol(d), 
+               rfeControl=control),
+
+times = 10L)
+
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+```

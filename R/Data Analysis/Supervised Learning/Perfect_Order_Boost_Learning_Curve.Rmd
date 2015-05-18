@@ -1,0 +1,154 @@
+---
+title: "Boosting Learning Curve Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Find cp parameter in tuned model
+* Set train() to run with that parameter
+* Set up training set runs using different numbers of observations
+* Evaluate training and testing sets on various n
+* Evaluate training and testing execution times vs n
+* Plot learning curve
+* Plot computation complexity curve.
+
+```{r packages, warning=FALSE}
+# Load necessary packages 
+
+library(microbenchmark)
+library(tidyr)
+library(plyr)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+#library(nnet)
+#library(neuralnet)
+library(gbm)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+modelTune = readRDS("Perfect_Order_Boost_modelTune.rds")
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Extract Parameters from Tuned Model
+-----------------------------------
+
+```{r calcLC, echo=FALSE, warning=FALSE}
+
+n.trees = modelTune$bestTune$n.trees
+interaction.depth = modelTune$bestTune$interaction.depth
+shrinkage = modelTune$bestTune$shrinkage
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+search.grid <- expand.grid(.n.trees = n.trees, 
+                           .interaction.depth = interaction.depth,
+                           .shrinkage = shrinkage)
+
+cat("Total observations:", nrow(d))
+cat("Training observations:", nrow(training))
+cat("Testing observations:", nrow(testing))
+
+trainSize = nrow(training)
+
+
+
+LCSets = function(x){
+  trainIndex <- createDataPartition(training$Outcome, p = x, list = FALSE, times = 1)
+  trainLC <- training[ trainIndex,]
+  
+  modelLC = train(Outcome ~ ., data = trainLC, method = "gbm", 
+                  tuneGrid = search.grid, verbose = F, trControl = cvCtrl)
+  
+  trainAccy = modelLC$results$Accuracy
+  obs = nrow(trainLC)
+  names(obs) = "Obs"
+  
+  names(trainAccy) = "trainAccy"
+  modelPredLC = predict(modelLC, testing)
+  output = confusionMatrix(modelPredLC, testing$Outcome)
+  testAccy = output$overall[1]
+
+  names(testAccy) = "testAccy"
+
+
+  return(c(obs, trainAccy, testAccy))
+}
+
+results = ldply((1:20)*.05, LCSets)
+
+saveRDS(results, "PO_Boost_LC_results.rds")
+
+
+```
+
+
+```{r plotLC}
+results = gather(results, type, value, testAccy:trainAccy) %>% group_by(type)
+
+ggplot(results,aes(x=Obs, y = value, color = type, group = type)) + 
+  geom_line() + 
+  #ggtitle("Decision Tree Learning Curve") +
+  ylab("Accuracy") +
+  xlab("Observations in Training Set") +
+  #scale_y_continuous(labels=comma) +
+  theme_bw() +
+  guides(fill=guide_legend(title = NULL)) +
+  scale_color_discrete(name = "",
+    breaks = c("testAccy", "trainAccy"), 
+    labels = c("Testing", "Training")) +
+  theme(legend.justification = c(1,0), legend.position = c(1,0))
+
+ggsave("PO_Boost_LC.png", width = 4, height = 4, dpi = 120)
+dev.off()
+```
+
+Calculate execution times
+
+  modelLC = train(Outcome ~ ., data = trainLC, method = "gbm", 
+                  tuneGrid = search.grid, verbose = F, trControl = cvCtrl)
+
+```{r timing, echo=FALSE, warning=FALSE}
+
+n.trees = modelTune$bestTune$n.trees
+interaction.depth = modelTune$bestTune$interaction.depth
+shrinkage = modelTune$bestTune$shrinkage
+
+cvCtrl = trainControl(method = "none")  # replace with none
+search.grid <- expand.grid(.n.trees = n.trees, 
+                           .interaction.depth = interaction.depth,
+                           .shrinkage = shrinkage)
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = training, method = "gbm", 
+                    tuneGrid = search.grid, verbose = F, trControl = cvCtrl), times = 10L)
+
+  
+testingTime = microbenchmark(
+    predict(modelTune, testing), times = 10L)
+
+plot(trainingTime)
+
+trainingTime$time[3]/1000000000
+str(trainingTime)
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+cat("Mean testing time:", testingTime$time[3]/1000000000, "ns")
+
+```
+

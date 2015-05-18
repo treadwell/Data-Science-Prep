@@ -1,0 +1,110 @@
+---
+title: "2a Principal Components Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Read FactoMineR documentation and tutorial
+* try running this against raw data (all 45 variables)
+* Bar chart of eigenvalues
+* interpretation of circle chart
+
+Observations
+------------
+* It takes 15 components to get to 80% of the variance
+
+```{r packages, warning=FALSE}
+# Load necessary packages 
+
+library(FactoMineR)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(microbenchmark)
+
+```
+
+```{r ImportData, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+par(mar = c(0, 0, 0, 0))
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+
+set.seed(250)
+```
+
+Principal Components Analysis
+-----------------------------
+
+This analysis implements PCA using the _FactoMineR_ package in R[^fn-1]. _FactoMineR_ is tuned using the following parameters:
+
+* X - a data frame with n rows (individuals) and p columns (numeric variables)
+* ncp	- number of dimensions kept in the results (by default 5)
+* scale.unit	- a boolean, if TRUE (value set by default) then data are scaled to unit variance
+* ind.sup	- a vector indicating the indexes of the supplementary individuals
+* quanti.sup - a vector indicating the indexes of the quantitative supplementary variables
+* quali.sup	- a vector indicating the indexes of the categorical supplementary variables
+* row.w	- an optional row weights (by default, a vector of 1 for uniform row weights)
+* col.w	- an optional column weights (by default, uniform column weights)
+* graph	- boolean, if TRUE a graph is displayed
+* axes - a length 2 vector specifying the components to plot
+
+
+[^fn-1]: Francois Husson, Julie Josse, Sebastien Le and Jeremy Mazet (2015). FactoMineR: Multivariate Exploratory Data Analysis and Data Mining. R package version 1.29. http://CRAN.R-project.org/package=FactoMineR
+
+```{r runpca, warning=FALSE}
+
+# ?PCA()
+
+res.pca = PCA(d, scale.unit=TRUE, ncp=15, graph=T)
+
+dev.copy(png,'Perfect_Order_pca.png')
+dev.off()
+
+saveRDS(res.pca, "models/Perfect_Order_pca_model.rds")
+
+res.pca
+# names(res.pca)
+res.pca$eig
+# res.pca$ind # distance
+res.pca$ind.sup
+res.pca$var
+res.pca$quali.sup
+res.pca$quanti.sup
+
+```
+
+Plots
+
+```{r}
+library("factoextra")
+fviz_screeplot(res.pca, ncp=15)
+
+dev.copy(png,'images/Perfect_Order_pca_scree.png')
+dev.off()
+
+# Contributions of variables on PC1
+fviz_pca_contrib(res.pca, choice = "var", axes = 1)
+
+dev.copy(png,'images/Perfect_Order_pca_var_contrib.png')
+dev.off()
+```
+
+```{r PCATiming}
+
+library(FactoMineR)
+library(microbenchmark)
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+
+trainingTime = microbenchmark(
+    res.pca = PCA(d, scale.unit=TRUE, ncp=15, graph=F), 
+    times = 10L)
+
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+```
+

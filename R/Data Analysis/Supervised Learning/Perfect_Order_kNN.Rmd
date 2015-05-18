@@ -1,0 +1,105 @@
+---
+title: "k-Nearest Neighbor Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Search over more k - done
+* verify distance measure with categorical data
+* use dummies to split categories
+* Add section for kNN specific data prep (dummies)
+* scaling is necessary (included in training run)
+
+Observations
+------------
+* Lazy learner
+* reasonable number of neighbors (3)
+* k too small: some risk of overfitting
+* k too large: oversmoothed boundaries, or bias
+* O(knd) to classify
+* Add note about scaling summary doc
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+#library(RWeka)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+#library(nnet)
+#library(neuralnet)
+#library(gbm)
+#library(kernlab)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Select and Tune Algorithm
+-------------------------
+In this analysis we use the \textit{knn3} function within the \textit{caret} machine learning framework in R which returns a $k$-nearest neighbor classification. It is based on the knn classifier described in Venables 2002[^fn-1] and utilizes a majority vote of the $k$ nearest neighbors in the training set for each row of the test set. $k$-NN uses two parameters:
+
+* The number of neighbors (k)
+* The distance metric.  In this case Euclidean distance is used due to the mix of numeric and binary features being explored.
+
+$k$-NN requires that variables be normalized.
+  
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: Venables, W. N. and Ripley, B. D. (2002) _Modern Applied Statistics with S_, Fourth edition. Springer.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+```{r tuning, warning=FALSE}
+#summary(training)
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+search.grid <- expand.grid(.k = 1:20)
+
+modelTune = train(Outcome ~ ., 
+                  data = training, 
+                  method = "knn", 
+                  metric = "Kappa",
+                  #tuneLength = 30, 
+                  tuneGrid = search.grid,
+                  trControl = cvCtrl,
+                  preProcess = c("center", "scale"))
+#warnings()
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_kNN_modelTune.rds")
+
+modelTune$finalModel
+
+# plot(rpartTune, scales = list(x = list(log = 10)))
+plot(modelTune)
+
+dev.copy(png,'kNN_PO_Tuning.png')
+dev.off()
+```
+
+Evaluate Algorithm on Test Set
+------------------------------
+Obtain and print confusion matrix and statistics:
+
+```{r predicting, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+```
+

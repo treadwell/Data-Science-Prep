@@ -1,0 +1,182 @@
+---
+title: "Exploratory Data Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+pdf_document:
+fig_caption: yes
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r packages, echo=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(mlbench)
+library(vcd)
+library(class)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+```
+
+```{r import, echo=FALSE}
+# clear environment and read data
+
+rm(list = ls())
+#setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+
+```
+
+
+
+Data Set 1:Perfect Order
+--------------------------
+The Supply Chain Operations Reference (SCOR) model is a standards-based approach for describing and managing supply chains[^fn-1]. One of the critical measures of supply chain performance is the "perfect order" rate: the percentage of orders received by a customer in exactly the condition expected with no backorders, perfect documentation, no pricing errors, on the date expected, etc. McGraw-Hill Education has implemented the SCOR model and has been tracking perfect order compliance for the past year. A key element in improving perfect order peformance is an understanding of what drives failure in delivering perfect orders so as to inform continuous improvement efforts. This data set represents one month's worth of orders shipped in November 2014. 
+
+The data were downloaded for _insert reason here_ from _insert source here_ [^fn-2] on January 8, 2015 using the R programming language [^fn-3] running within R-Studio [^fn-4].
+
+[^fn-1]: SCOR source
+[^fn-2]: Data source
+[^fn-3]: R Core Team (2012). ”R: A language and environment for statistical computing.” URL: [http://www.R-project.org](http://www.R-project.org)
+[^fn-4]: R Studio. URL: [http://www.rstudio.com](http://www.rstudio.com)
+
+
+```{r descriptive}
+
+cat("Rows in data set: ", nrow(d))
+cat("Columns in data set: ", ncol(d))
+
+varNames = dput(names(d))
+
+str(d)
+summary(d)
+glimpse(d)
+
+
+# Look at contents of various columns
+vals <- lapply( d[,c(4:15)],table)
+
+vals  # use vals[1] for the results in the first column (of the results table)
+
+# Look at contents of factors, specifically
+
+Factorvals <- lapply(d[sapply(d, function(x) is.factor(x))],table)
+ 
+Factorvals[1]
+Factorvals$OrderType
+
+# FactorVars <- lapply(d, function(x) names(is.factor(x)))
+# 
+# FactorVars
+# str(FactorVars)
+# d[,FactorVars]
+# 
+# FactorFrame = dlply(FactorVars, d[,x])
+
+```
+
+Correlations: 
+
+```{r correlations, echo=FALSE}
+# str(d)
+# 
+# # calculate correlation matrix
+# tab <- xtabs(~ Outcome + Credit, data = d)
+# tab
+# 
+# summary(assocstats(tab))
+# 
+# str(filtered)
+# 
+# correlationMatrix <- cor(filtered[,c(1,2,3,6,7,8,9,10,11,12,13,14,15, 16,17,18,19,20,21,22,23,24,25,26)])  # remove dates and factors
+# 
+# # summarize the correlation matrix
+# print(correlationMatrix)
+# 
+# # find attributes that are highly corrected (ideally >0.75)
+# highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.5)
+# 
+# # print indexes of highly correlated attributes
+# print(highlyCorrelated)
+```
+
+
+```{r featuresLVQ, warning=FALSE}
+
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model
+model <- train(Outcome~., data=d, method="lvq", preProcess="scale", trControl=control)
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+```
+
+Recursive Feature Elimination (RFE) using _caret_ and its rfe() function.
+
+```{r featuresRFE, echo=FALSE}
+# 
+reducedSample = readRDS("Perfect_Order_reduced.rds")
+
+table(reducedSample$Outcome)
+
+
+# define the control using a random forest selection function
+control <- rfeControl(functions=rfFuncs, 
+                      method="cv", 
+                      number=3)
+
+# run the RFE algorithm
+results <- rfe(reducedSample[,1:27], 
+               reducedSample$Outcome, 
+               sizes=c(1:27), 
+               rfeControl=control)
+warnings()
+# summarize the results
+print(results)
+# list the chosen features
+predictors(results)
+# plot the results
+plot(results, type=c("g", "o"))
+dev.copy(png,'RFE_Features_PO.png')
+dev.off()
+```
+Random Forest yielded the following variables:
+
+The top 5 variables (out of 25):
+   Backorder, CustomerContact, Restriction, OrderType, Extc
+* And I'm adding "Credit"
+
+Predictors: 
+
+"Backorder"
+"CustomerContact"
+"Restriction"        
+"OrderType"
+"Extc"
+"SalesMarketing"
+"Value"
+"Credit"
+"Units"              
+"Elementary"
+"Line.Count"
+"FG"                 
+"DC"
+"Secondary"
+"Quality"            
+"College"
+"PPK"
+"Professional"       
+"CustomerMaintenance" 
+"Import"
+"InternationalHold"  
+"CTB"
+"Kit"
+"Included"           
+"Expense" 

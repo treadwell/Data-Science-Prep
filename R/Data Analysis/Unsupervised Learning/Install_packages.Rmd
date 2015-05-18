@@ -1,0 +1,46 @@
+---
+title: "Install Packages"
+author: "Ken Brooks"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+```{r echo=FALSE}
+# Install necessary packages 
+install.packages("NbClust")
+install.packages("cluster")
+install.packages("mclust")
+install.packages("fpc")
+install.packages("corrplot")
+install.packages("fastICA")
+install.packages("FactoMineR") # PCA
+install.packages("factoextra")
+install.packages("microbenchmark")
+install.packages("xlsx")
+install.packages("plyr")
+install.packages("tidyr")
+install.packages("dplyr")
+install.packages("pROC")
+install.packages("mlbench")
+install.packages("vcd")
+install.packages("lattice")
+install.packages("ggplot2")
+install.packages("partykit", dependencies = TRUE)
+install.packages("RWeka", dependencies = TRUE)
+install.packages("caret")
+install.packages("AppliedPredictiveModeling")
+install.packages("rpart")
+install.packages("nnet")
+install.packages("neuralnet")
+install.packages("RSNNS")
+install.packages("gbm")
+install.packages("kernlab")
+install.packages("pracma")
+install.packages("moments")
+
+# install.packages("devtools")
+install.packages("devtools")
+library(devtools)
+install_github("kassambara/factoextra")
+
+```

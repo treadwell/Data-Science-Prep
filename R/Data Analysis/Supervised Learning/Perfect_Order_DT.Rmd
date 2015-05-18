@@ -1,0 +1,166 @@
+---
+title: "Decision Tree Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Add an analysis of DT of 1 layer deep to see what the accy turns out to be
+* Add a timing analysis of time to execute.
+
+```{r packages, warning=FALSE}
+# Load necessary packages 
+
+#library(RWeka)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+library(rpart)
+#library(nnet)
+#library(neuralnet)
+#library(gbm)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Select and Tune Algorithm
+-------------------------
+
+We implemented decision trees using the _rpart_ package in R driven by the caret machine learning framework. Rpart fits the classical CART models of Breiman et al (1984)[^fn-1]. Rpart was tuned via a cost of complexity parameter, which trades off incremental error against incremental leaves in the tree by pruning a branch if the error from that branch is within one standard error of the optimum. 
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: Breiman, L., J. Friedman, R. Olshen, and C. Stone, 1984: Classification and Regression Trees. Wadsworth Books, 358.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+```{r tuning, echo=FALSE, warning=FALSE}
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+search.grid <- expand.grid(.cp = (0:20)*.001)
+
+modelTune = train(Outcome ~ ., 
+                  data = training, 
+                  method = "rpart", 
+                  metric = "Kappa",
+                  tuneGrid = search.grid, 
+                  trControl = cvCtrl)
+
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_DT_modelTune.rds")
+
+modelTune$finalModel
+
+# plot(rpartTune, scales = list(x = list(log = 10)))
+plot(modelTune)
+
+dev.copy(png,'DT_PO_Tuning.png')
+dev.off()
+
+```
+
+Tuned model
+-----------
+This tuning approach identified that best results are achieved at a Cp of xyz (see figure above).
+
+The final model is shown below.
+
+```{r visualize, warning=FALSE, message=FALSE}
+
+# Install and use partykit package for tree visualization:
+
+library(partykit)
+modelGraph = as.party(modelTune$finalModel)
+plot(modelGraph)
+
+# note that the labels on this are wrong when printed
+
+```
+
+
+Evaluate Tuned Algorithm on Test Set
+------------------------------------
+Obtain and print confusion matrix and statistics:
+
+```{r predicting, echo=FALSE, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+```
+
+Untuned Algorithm
+-----------------
+Run the training algorithm with $C_p = 0$ in order to compare results against the tuned model
+
+```{r dataUntuned, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+```{r untunedTraining, echo=FALSE, warning=FALSE}
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+search.grid <- expand.grid(.cp = 0)
+
+modelUntuned = train(Outcome ~ ., 
+                  data = training, 
+                  method = "rpart", 
+                  metric = "Kappa",
+                  tuneGrid = search.grid, 
+                  trControl = cvCtrl)
+
+modelUntuned
+
+modelUntuned$finalModel
+
+```
+
+Untuned model
+-------------
+The untuned model is shown below:
+
+```{r visualizeUntuned, warning=FALSE, message=FALSE}
+
+# Install and use partykit package for tree visualization:
+
+library(partykit)
+modelGraphUntuned = as.party(modelUntuned$finalModel)
+plot(modelGraphUntuned)
+
+# note that the labels on this are wrong when printed
+
+```
+
+Evaluate Untuned Algorithm on Test Set
+------------------------------------
+Obtain and print confusion matrix and statistics:
+
+```{r predictingUntuned, echo=FALSE, warning=FALSE}
+modelPredUntuned = predict(modelUntuned, testing)
+confusionMatrix(modelPredUntuned, testing$Outcome)
+```

@@ -1,0 +1,135 @@
+---
+title: "3 Cluster Analysis of Reduced Dimensionality Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+Observations / To do
+--------------------
+* Implement EM clustering - pick a k and assign individuals
+* Compare clustering of raw data using both methods
+* Build tables, sorting each axis from high to low and look at percent in diagonal
+* Optional: does this vary with differnt number of components? Different number of clusters?
+
+
+
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(cluster)
+library(NbClust)
+library(mclust)
+library(fpc)
+library(moments)
+
+#?kmeans()
+
+```
+
+```{r ImportData, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+set.seed(250)
+
+
+# Retrieve best PCA data
+PCA = readRDS("models/Perfect_Order_pca_model.rds")
+PCA = data.frame(PCA$ind$coord) #      "coord. for the individuals"
+head(PCA)
+
+# Retrieve best ICA data
+
+ICA = readRDS("models/Perfect_Order_ICA_20_model.rds")
+ICA = data.frame(ICA$S)
+ICA = ICA[,numcolwise(kurtosis)(ICA) > 100]
+
+# Retrieve best RP data
+RP = readRDS("models/Perfect_Order_rp_data.rds")
+
+# Retrieve best RFE data
+d = readRDS("models/Perfect_Order_cluster.rds")
+RFE = readRDS("models/Perfect_Order_rfe_model.rds")
+RFE = d[,predictors(RFE)]
+
+```
+
+```{r runCluster}
+
+# Run KM and EM on all of them
+fit.km.3.PCA <- kmeans(PCA, 3, nstart=25)
+saveRDS(fit.km.3.PCA, "models/Perfect_Order_cluster.km.3.PCA.rds")
+
+fit.km.3.ICA <- kmeans(ICA, 3, nstart=25) 
+saveRDS(fit.km.3.ICA, "models/Perfect_Order_cluster.km.3.ICA.rds")
+
+fit.km.3.RP <- kmeans(RP, 3, nstart=25) 
+saveRDS(fit.km.3.RP, "models/Perfect_Order_cluster.km.3.RP.rds")
+
+fit.km.3.RFE <- kmeans(RFE, 3, nstart=25) 
+saveRDS(fit.km.3.RFE, "models/Perfect_Order_cluster.km.3.RFE.rds")
+
+fit.em.3.PCA <- Mclust(PCA, G=3)
+saveRDS(fit.em.3.PCA, "models/Perfect_Order_cluster.em.3.PCA.rds")
+summary.em.3.PCA <- summary(fit.em.3.PCA, data = PCA)
+
+fit.em.3.ICA <- Mclust(ICA, G=3)
+saveRDS(fit.em.3.ICA, "models/Perfect_Order_cluster.em.3.ICA.rds")
+summary.em.3.ICA <- summary(fit.em.3.ICA, data = ICA)
+
+fit.em.3.RP <- Mclust(RP, G=3)
+saveRDS(fit.em.3.RP, "models/Perfect_Order_cluster.em.3.RP.rds")
+summary.em.3.RP <- summary(fit.em.3.RP, data = RP)
+
+fit.em.3.RFE <- Mclust(RFE, G=3)
+saveRDS(fit.em.3.RFE, "models/Perfect_Order_cluster.em.3.RFE.rds")
+summary.em.3.RFE <- summary(fit.em.3.RFE, data = RFE)
+
+# Retrieve full data cluster models
+fit.em.3.Full = readRDS("models/Perfect_Order_EM_3_model.rds")
+fit.km.3.Full = readRDS("models/Perfect_Order_KM_3_model.rds")
+summary.em.3.Full <- summary(fit.em.3.Full, data = d)
+```
+
+Generate Plots
+--------------
+
+```{r}
+# generate plots
+?title
+
+library(cluster)
+
+par(mfrow=c(2,5), mar=c(0, 0, 0, 0))
+
+clusplot(d, fit.km.3.Full$cluster, color=TRUE, shade=TRUE, lines=0, main="\nKM Full Data", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.km.3.PCA$cluster, color=TRUE, shade=TRUE, lines=0, main = "\nKM PCA", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.km.3.ICA$cluster, color=TRUE, shade=TRUE, lines=0, main = "\nKM ICA", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.km.3.RP$cluster, color=TRUE, shade=TRUE, lines=0, main = "\nKM RP", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.km.3.RFE$cluster, color=TRUE, shade=TRUE, lines=0, main = "\nKM RFE", ylim = c(-8, 4), xlim = c(0,30))
+
+clusplot(d, fit.em.3.Full$classification, color=TRUE, shade=TRUE, lines=0, main = "\nEM Full Data", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.em.3.PCA$classification, color=TRUE, shade=TRUE, lines=0, main = "\nEM PCA", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.em.3.ICA$classification, color=TRUE, shade=TRUE, lines=0, main = "\nEM ICA", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.em.3.RP$classification, color=TRUE, shade=TRUE, lines=0, main = "\nEM RP", ylim = c(-8, 4), xlim = c(0,30))
+clusplot(d, fit.em.3.RFE$classification, color=TRUE, shade=TRUE, lines=0, main = "\nEM RFE", ylim = c(-8, 4), xlim = c(0,30))
+
+dev.copy(png,'images/Perfect_Order_cluster_various.png', width = 1200)
+dev.off()
+
+```
+
+Generate Tables and Stats
+-------------------------
+
+```{r}
+# generate tables and stats for all combinations
+
+#table(fit.km.3.Full$cluster, summary.em.3$classification)
+#table(fit.km.3.Full$cluster, summary.em.3$classification)
+
+```

@@ -1,0 +1,155 @@
+---
+title: "Support Vector Machine Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Tune sigma on radial kernel
+
+Observations
+------------
+* Expected this to be the best fit and most resistant to overfitting
+* Not proven out by results (yet)
+* What does sigma do for a radial kernel? How do you calculate it?
+* What does scale do for a polynomial kernel?
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+#library(RWeka)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+#library(neuralnet)
+#library(gbm)
+library(kernlab)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Select and Tune Algorithm: Polynomial Kernel
+--------------------------------------------
+
+In this analysis we use the _ksvm_ model in the _kernlab_ R package, driven through the _caret_ machine learning framework. _Ksvm_ uses John Platt's SMO algorithm for solving the SVM QP problem on most SVM formulations[^fn-1]. This analysis implements a polynomial kernel tuned across the following parameters:
+
+* Scale (scale)
+* Degree of the polynomial. (degree)
+* Cost of constraints violation: the ‘C’-constant of the regularization term in the Lagrange formulation. (C)
+
+SVM requires that the data be preprocessed.
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: J. Platt, Probabilistic outputs for support vector machines and comparison to regularized likelihood methods. _Advances in Large Margin Classifiers_, A. Smola, P. Bartlett, B. Schoelkopf and D. Schuurmans, Eds. Cambridge, MA: MIT Press, 2000.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+```{r tuning_polynomial, warning=FALSE}
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+# for method = svmPoly
+search.grid <- expand.grid(.scale = c(0.25, 0.5, 1,2),
+                           .degree = c(1, 2, 3),
+                           .C = c(0.125, 0.25,0.5, 1, 2))
+
+modelTune = train(Outcome ~ ., 
+                  data = training, 
+                  method = "svmPoly",
+                  metric = "Kappa",
+                  tuneGrid = search.grid, 
+                  trControl = cvCtrl,
+                  scaled = TRUE)
+
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_SVM_poly_modelTune.rds")
+
+modelTune$finalModel
+
+# plot(rpartTune, scales = list(x = list(log = 10)))
+plot(modelTune)
+
+dev.copy(png,'SVMpoly_PO_Tuning.png')
+dev.off()
+
+```
+
+Evaluate Polynomial Algorithm on Test Set
+-----------------------------------------
+Obtain and print confusion matrix and statistics
+
+```{r predicting_polynomial, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+```
+
+Select and Tune Algorithm: Radial Kernel
+--------------------------------------------
+In this analysis we use the svmPoly kernel with the _ksvm_ model in the _kernlab_ R package, driven through the _caret_ machine learning framework. The radial kernel model is tuned across the following parameters:
+
+* Sigma (sigma)
+* C (C)
+
+The same cross-validation and scaling approach is used as in the polynomial analysis.
+
+```{r tuning_radial, warning=FALSE}
+str(training)
+
+sigDist <- sigest(Outcome ~ ., data = training, frac = 1)
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+# for method = svmRadial
+search.grid <- expand.grid(.sigma = sigDist[1],
+                           .C = c(.125, .25, .5, 1.0, 2.0, 4.0, 6.0, 8.0))
+
+modelTune = train(Outcome ~ ., 
+                  data = training, 
+                  method = "svmRadial",
+                  metric = "Kappa",
+                  #tuneLength = 10,
+                  tuneGrid = search.grid, 
+                  trControl = cvCtrl,
+                  scaled = TRUE)
+
+
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_SVM_radial_modelTune.rds")
+
+modelTune$finalModel
+
+# plot(rpartTune, scales = list(x = list(log = 10)))
+plot(modelTune)
+
+dev.copy(png,'SVMrad_PO_Tuning.png')
+dev.off()
+
+```
+
+Evaluate Radial Kernel Model on Test Set
+----------------------------------------
+Obtain and print confusion matrix and statistics
+
+```{r predicting_radial, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+```

@@ -1,0 +1,315 @@
+---
+title: "Data Preparation of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+pdf_document:
+fig_caption: yes
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r packages, echo=FALSE, warning=FALSE}
+
+library(dplyr)
+library(mlbench)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+#library(neuralnet)
+#library(gbm)
+```
+
+```{r import, echo=FALSE}
+# clear environment and read data
+
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+import = read.csv("Perfect_Order_2014_11.csv")
+
+saveRDS(import, "Perfect_Order_import.rds")
+```
+
+
+```{r typing, echo=FALSE}
+
+names(import)
+summary(import)
+str(import)
+
+# Kill off rare factor levels
+table(import$Order.Type)
+import$Order.Type = as.character(import$Order.Type)
+import = import[import$Order.Type != "FREE-CONVEN & EXHIBIT-US",]
+table(import$Order.Type)
+import$Order.Type = as.factor(import$Order.Type)
+table(import$Order.Type)
+# Reset Factors to integers
+import$Backorder = as.character(factor(import$Backorder))
+import$Backorder[import$Backorder == "No"] = 0
+import$Backorder[import$Backorder == "Yes"] = 1
+import$Backorder = as.integer(import$Backorder)
+
+# import$Outcome = as.character(factor(import$Outcome))
+# import$Outcome[import$Outcome == "Fail"] = 1
+# import$Outcome[import$Outcome == "On time"] = 0
+# import$Outcome = as.integer(import$Outcome)
+
+# Cast as Date
+import$Entered = as.Date(import$Entered, "%m/%d/%y")
+import$Shipped = as.Date(import$Shipped, "%m/%d/%y")
+import$Future.Date = as.Date(import$Future.Date, "%m/%d/%y")
+
+# Cast as Factor
+import$DC =as.factor(import$DC)
+
+# Cast as Integer
+# import$Backorder = as.integer(import$Backorder)
+import$Credit = as.integer(import$Credit) 
+import$Customer.Contact = as.integer(import$Customer.Contact) 
+import$Customer.Maintenance = as.integer(import$Customer.Maintenance) 
+import$Hold.and.Combine = as.integer(import$Hold.and.Combine) 
+import$Import = as.integer(import$Import) 
+import$InternationalHold = as.integer(import$InternationalHold) 
+import$New.Pub = as.integer(import$New.Pub) 
+import$Quality = as.integer(import$Quality) 
+import$Restriction = as.integer(import$Restriction) 
+import$Sales...Marketing = as.integer(import$Sales...Marketing) 
+# import$EXPENSE = as.factor(import$EXPENSE) 
+# import$EXTSC = as.factor(import$EXTSC)
+# import$FG = as.factor(import$FG) 
+# import$PART = as.factor(import$PART) 
+# import$PPK = as.factor(import$PPK) 
+# import$PTO = as.factor(import$PTO) 
+# import$PTO.MIX = as.factor(import$PTO.MIX)
+# import$PTOSH = as.factor(import$PTOSH)
+# import$INCLUDED = as.factor(import$INCLUDED)
+# import$KIT = as.factor(import$KIT) 
+# import$STANDARD = as.factor(import$STANDARD)
+# import$Australia.Imports = as.factor(import$Australia.Imports) 
+# import$College = as.factor(import$College) 
+# import$CTB = as.factor(import$CTB) 
+# import$Elementary = as.factor(import$Elementary) 
+# import$International = as.factor(import$International) 
+# import$Professional = as.factor(import$Professional) 
+# import$Secondary = as.factor(import$Secondary) 
+# import$UK.Imports = as.factor(import$UK.Imports)
+```
+
+```{r missingdata, echo=FALSE}
+
+#summary(import)
+import$Credit[is.na(import$Credit)] = as.integer(0)
+import$Customer.Contact[is.na(import$Customer.Contact)] = as.integer(0)
+import$Customer.Maintenance[is.na(import$Customer.Maintenance)] = as.integer(0)
+import$Hold.and.Combine[is.na(import$Hold.and.Combine)] = as.integer(0)
+import$Import[is.na(import$Import)] = as.integer(0)
+import$InternationalHold[is.na(import$InternationalHold)] = as.integer(0)
+import$New.Pub[is.na(import$New.Pub)] = as.integer(0)
+import$Quality[is.na(import$Quality)] = as.integer(0)
+import$Restriction[is.na(import$Restriction)] = as.integer(0)
+import$Sales...Marketing[is.na(import$Sales...Marketing)] = as.integer(0)
+
+
+```
+
+
+```{r name, echo=FALSE}
+
+named = select(import, c(
+  LineCount = LineCount,
+  Units = Units,
+  Value = Value,
+  OrderType = Order.Type, 
+  #Customer = Customer, # removed to allow RFE
+  #City = CITY, # removed to allow RFE
+  #State =STATE, # removed to allow RFE
+  DC = DC, 
+  Backorder = Backorder,
+  Credit = as.integer(Credit), 
+  CustomerContact = as.integer(Customer.Contact), 
+  CustomerMaintenance = as.integer(Customer.Maintenance), 
+  HoldandCombine = as.integer(Hold.and.Combine), 
+  Import = as.integer(Import), 
+  InternationalHold = as.integer(InternationalHold), 
+  NewPub = as.integer(New.Pub), 
+  Quality = as.integer(Quality), 
+  Restriction = as.integer(Restriction), 
+  SalesMarketing = as.integer(Sales...Marketing), 
+  Expense = EXPENSE, 
+  Extc = EXTSC,
+  FG = FG, 
+  Part = PART, 
+  PPK = PPK, 
+  PTO = PTO, 
+  PTOMIX = PTO.MIX,
+  PTOSH = PTOSH,
+  Included = INCLUDED,
+  Kit = KIT, 
+  Standard = STANDARD,
+#   AustraliaImports = Australia.Imports, # informational
+#   College = College,  # informational
+#   CTB = CTB,  # informational
+#   Elementary = Elementary,  # informational
+#   International = International,  # informational
+#   Professional = Professional,  # informational
+#   Secondary = Secondary,  # informational
+#   UKImports = UK.Imports, # informational
+  Outcome = Outcome
+))
+
+str(named)
+saveRDS(named, "Perfect_Order_named.rds")
+```
+
+
+```{r filter, echo=FALSE}
+filtered = filter(named, Standard == 1)
+
+
+
+summary(named$OrderType)
+
+
+dataSample <- createDataPartition(filtered$Outcome, p = .10,
+                                  list = FALSE,
+                                  times = 1)
+reducedSample <- filtered[ dataSample,]
+
+saveRDS(reducedSample, "Perfect_Order_reduced.rds")
+
+```
+
+From exploratory data analysis the following features were significant:
+
+```{r selection}
+d = select(reducedSample, c(
+  LineCount = LineCount,
+  Units = Units,
+  Value = Value,
+  OrderType = OrderType, 
+  #Customer = Customer, 
+  #City = CITY,
+  #State =STATE,
+  DC = DC, 
+  Backorder = Backorder,
+  Credit = Credit, 
+  CustomerContact = CustomerContact, 
+  CustomerMaintenance = CustomerMaintenance, 
+  #HoldandCombine = Hold.and.Combine, 
+  Import = Import, 
+  #InternationalHold = InternationalHold, 
+  #NewPub = New.Pub, 
+  #Quality = Quality, 
+  Restriction = Restriction, 
+  SalesMarketing = SalesMarketing, 
+  #Expense = EXPENSE, 
+  Extc = Extc,
+  FG = FG, 
+  #Part = PART, 
+  PPK = PPK, 
+  #PTO = PTO, 
+  #PTOMIX = PTO.MIX,
+  #PTOSH = PTOSH,
+  #Included = INCLUDED,
+  #Kit = KIT, 
+  #Standard = Standard, # removed due to filter
+  #AustraliaImports = Australia.Imports, # removed due to filter
+  #College = College, 
+  #CTB = CTB, # removed due to filter 
+  #Elementary = Elementary, 
+  #International = International, 
+  #Professional = Professional, 
+  #Secondary = Secondary, 
+  #UKImports = UK.Imports, # removed due to filter
+  Outcome = Outcome
+))
+
+saveRDS(d, "Perfect_Order_d.rds")
+
+str(d)
+
+```
+
+This results in a reduced data set of 15 features and one label.
+
+Create Training and Test Sets
+-----------------------------
+* Use 80% of the data for training and the remainder for testing
+
+```{r training, echo=FALSE}
+trainIndex <- createDataPartition(d$Outcome, p = .8,
+                                  list = FALSE,
+                                  times = 1)
+
+training <- d[ trainIndex,]
+
+
+testing  <- d[-trainIndex,]
+
+
+saveRDS(training, "Perfect_Order_training.rds")
+saveRDS(testing, "Perfect_Order_testing.rds")
+
+```
+
+Prep for ABAGAIL
+
+```{r flattenedData}
+
+# replace OrderType and DC with one-hot, and Outcome with 0/1
+
+OrderTypeOneHot = class.ind(training$OrderType)
+DCOneHot = class.ind(training$DC)
+
+# Reset Outcome to integer
+training$Outcome = as.character(factor(training$Outcome))
+str(training$Outcome)
+training$Outcome[training$Outcome == "Fail"] = 0
+training$Outcome[training$Outcome == "On time"] = 1
+training$Outcome = as.integer(training$Outcome)
+table(training$Outcome)
+
+# strip out OrderType, DC and cbind with new arrays
+
+training = select(training, -OrderType, -DC)
+
+training = cbind(OrderTypeOneHot, DCOneHot, training)
+
+
+
+write.table(training, file = "Perfect_Order_ABAGAIL_training.csv", sep=",",  col.names=FALSE) # for use with ABAGAIL
+
+training$Outcome = as.factor(training$Outcome)  # to get nnet to work
+saveRDS(training, "Perfect_Order_flat_training.rds")
+
+# same thing for test data
+
+# replace OrderType and DC with one-hot, and Outcome with 0/1
+
+OrderTypeOneHot = class.ind(testing$OrderType)
+DCOneHot = class.ind(testing$DC)
+
+# Reset Outcome to integer - change to factor to make nnet work
+testing$Outcome = as.character(factor(testing$Outcome))
+str(testing$Outcome)
+testing$Outcome[testing$Outcome == "Fail"] = 0
+testing$Outcome[testing$Outcome == "On time"] = 1
+testing$Outcome = as.integer(testing$Outcome)
+table(testing$Outcome)
+
+# strip out OrderType, DC and cbind with new arrays
+
+testing = select(testing, -OrderType, -DC)
+
+testing = cbind(OrderTypeOneHot, DCOneHot, testing)
+
+write.table( testing, file = "Perfect_Order_ABAGAIL_testing.csv", sep=",",  col.names=FALSE) # for use with ABAGAIL
+
+testing$Outcome = as.factor(testing$Outcome)  # to get nnet to work
+saveRDS(testing, "Perfect_Order_flat_testing.rds")
+```
+

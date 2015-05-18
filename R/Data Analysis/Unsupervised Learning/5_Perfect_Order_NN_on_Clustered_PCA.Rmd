@@ -1,0 +1,625 @@
+---
+title: "5 ANN Analysis of Clustered and Projected Data from Perfect Order Data Set"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* This uses 5 components. Do more?
+* Does this training and test set match the original?  
+* Ideally add PCA to original data, then just select it out to run this analysis
+
+Observations
+------------
+* Recommendation is 2 units, a decrease
+* Positive predictive value isn't great at .57143
+* Negative predictive value is quite good at .9671. Which way do the clusters and positives work:  Is positive that you're predicting a perfect, or a fail?
+* Accuracy of test set is 0.9313, better than PCA version
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+library(microbenchmark)
+library(moments)
+library(plyr)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+library(neuralnet)
+#library(gbm)
+
+library(cluster)
+library(NbClust)
+library(mclust)
+library(fpc)
+
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Retrieve and Prepare Data
+-------------------------
+
+```{r PrepData, warning=FALSE}
+
+# Retrieve label data
+labels = readRDS("models/Perfect_Order_labels.rds")
+
+# Retrieve cluster data and transform to "one hot" arrays
+fit.km.3 = readRDS("models/Perfect_Order_KM_3_model.rds")
+km.3.clusters = class.ind(fit.km.3$cluster)
+head(km.3.clusters)
+
+fit.em.3 = readRDS("models/Perfect_Order_EM_3_model.rds")
+em.3.clusters = class.ind(fit.em.3$classification)
+head(em.3.clusters)
+
+# Retrieve base data without labels
+Full = readRDS("models/Perfect_Order_cluster.rds")
+
+KM.Full = cbind(Full, km.3.clusters, labels)
+EM.Full = cbind(Full, em.3.clusters, labels)
+Full = cbind(Full, labels)
+
+KM.Full = dplyr::rename(KM.Full,Outcome=labels)
+EM.Full = dplyr::rename(EM.Full,Outcome=labels)
+Full = dplyr::rename(Full,Outcome=labels)
+
+trainIndex <- createDataPartition(Full$Outcome, p = .8, list = FALSE, times = 1)
+Full.training <- Full[ trainIndex,]
+EM.Full.training <- EM.Full[ trainIndex,]
+KM.Full.training <- KM.Full[ trainIndex,]
+Full.testing  <- Full[-trainIndex,]
+EM.Full.testing  <- EM.Full[-trainIndex,]
+KM.Full.testing  <- KM.Full[-trainIndex,]
+
+# Retrieve best PCA data
+PCA = readRDS("models/Perfect_Order_pca_model.rds")
+PCA = data.frame(PCA$ind$coord) #      "coord. for the individuals"
+KM.PCA = cbind(PCA, km.3.clusters, labels)
+EM.PCA = cbind(PCA, em.3.clusters, labels)
+KM.PCA = dplyr::rename(KM.PCA,Outcome=labels)
+EM.PCA = dplyr::rename(EM.PCA,Outcome=labels)
+EM.PCA.training <- EM.PCA[ trainIndex,]
+KM.PCA.training <- KM.PCA[ trainIndex,]
+EM.PCA.testing  <- EM.PCA[-trainIndex,]
+KM.PCA.testing  <- KM.PCA[-trainIndex,]
+
+# Retrieve best ICA data
+
+ICA = readRDS("models/Perfect_Order_ICA_20_model.rds")
+ICA = data.frame(ICA$S)
+ICA = ICA[,numcolwise(kurtosis)(ICA) > 100]
+KM.ICA = cbind(ICA, km.3.clusters, labels)
+EM.ICA = cbind(ICA, em.3.clusters, labels)
+KM.ICA = dplyr::rename(KM.ICA,Outcome=labels)
+EM.ICA = dplyr::rename(EM.ICA,Outcome=labels)
+EM.ICA.training <- EM.ICA[ trainIndex,]
+KM.ICA.training <- KM.ICA[ trainIndex,]
+EM.ICA.testing  <- EM.ICA[-trainIndex,]
+KM.ICA.testing  <- KM.ICA[-trainIndex,]
+
+# Retrieve best RP data
+RP = readRDS("models/Perfect_Order_rp_data.rds")
+KM.RP = cbind(RP, km.3.clusters, labels)
+EM.RP = cbind(RP, em.3.clusters, labels)
+KM.RP = dplyr::rename(KM.RP,Outcome=labels)
+EM.RP = dplyr::rename(EM.RP,Outcome=labels)
+EM.RP.training <- EM.RP[ trainIndex,]
+KM.RP.training <- KM.RP[ trainIndex,]
+EM.RP.testing  <- EM.RP[-trainIndex,]
+KM.RP.testing  <- KM.RP[-trainIndex,]
+
+# Retrieve best RFE data
+d = readRDS("models/Perfect_Order_cluster.rds")
+RFE = readRDS("models/Perfect_Order_rfe_model.rds")
+RFE = d[,predictors(RFE)]
+KM.RFE = cbind(RFE, km.3.clusters, labels)
+EM.RFE = cbind(RFE, em.3.clusters, labels)
+KM.RFE = dplyr::rename(KM.RFE,Outcome=labels)
+EM.RFE = dplyr::rename(EM.RFE,Outcome=labels)
+EM.RFE.training <- EM.RFE[ trainIndex,]
+KM.RFE.training <- KM.RFE[ trainIndex,]
+EM.RFE.testing  <- EM.RFE[-trainIndex,]
+KM.RFE.testing  <- KM.RFE[-trainIndex,]
+
+```
+
+Select and Tune Algorithm
+-------------------------
+
+We implemented neural networks using the _nnet_ package in R driven by the _caret_ machine learning framework. _Nnet_ fits a single-hidden layer neural network with the ability to utilize skip-layer connections[^fn-1]. For a single output with two levels represented by both data sets the model uses entropy fit. _Nnet_ is tuned using the following parameters:
+
+* Decay rate of parameters (decay)
+* Number of units in the hidden layer (size)
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: Ripley, B. D. (1996) _Pattern Recognition and Neural Networks_. Cambridge.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+Full Data
+---------
+
+```{r FullANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+Full.model = train(Outcome ~ ., 
+                  data = Full.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(Full.model, "models/Perfect_Order_NN_Full.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = Full.model$finalModel$tuneValue$decay, 
+                           .size = Full.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = Full.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+Full.pred = predict(Full.model, Full.testing)
+matrix = confusionMatrix(Full.pred, Full.testing$Outcome)
+
+# output results
+cat("Hidden units:", Full.model$finalModel$tuneValue$size)
+cat("Decay rate:", Full.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+KM.Full ANN
+------------
+
+```{r KMFullANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+KM.Full.model = train(Outcome ~ ., 
+                  data = KM.Full.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(KM.Full.model, "models/Perfect_Order_NN_KM_Full.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = KM.Full.model$finalModel$tuneValue$decay, 
+                           .size = KM.Full.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = KM.Full.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+KM.Full.pred = predict(KM.Full.model, KM.Full.testing)
+matrix = confusionMatrix(KM.Full.pred, KM.Full.testing$Outcome)
+
+# output results
+cat("Hidden units:", KM.Full.model$finalModel$tuneValue$size)
+cat("Decay rate:", KM.Full.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+EM.Full ANN
+------------
+
+```{r EMFullANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+EM.Full.model = train(Outcome ~ ., 
+                  data = EM.Full.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(EM.Full.model, "models/Perfect_Order_NN_EM_Full.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = EM.Full.model$finalModel$tuneValue$decay, 
+                           .size = EM.Full.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = EM.Full.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+EM.Full.pred = predict(EM.Full.model, EM.Full.testing)
+matrix = confusionMatrix(EM.Full.pred, EM.Full.testing$Outcome)
+
+# output results
+cat("Hidden units:", EM.Full.model$finalModel$tuneValue$size)
+cat("Decay rate:", EM.Full.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+KM.PCA ANN
+----------
+
+```{r KMPCAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+KM.PCA.model = train(Outcome ~ ., 
+                  data = KM.PCA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(KM.PCA.model, "models/Perfect_Order_NN_KM_PCA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = KM.PCA.model$finalModel$tuneValue$decay, 
+                           .size = KM.PCA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = KM.PCA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+KM.PCA.pred = predict(KM.PCA.model, KM.PCA.testing)
+matrix = confusionMatrix(KM.PCA.pred, KM.PCA.testing$Outcome)
+
+# output results
+cat("Hidden units:", KM.PCA.model$finalModel$tuneValue$size)
+cat("Decay rate:", KM.PCA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+EM.PCA ANN
+----------
+
+```{r EM.PCAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+EM.PCA.model = train(Outcome ~ ., 
+                  data = EM.PCA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(EM.PCA.model, "models/Perfect_Order_NN_EM_PCA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = EM.PCA.model$finalModel$tuneValue$decay, 
+                           .size = EM.PCA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = EM.PCA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+EM.PCA.pred = predict(EM.PCA.model, EM.PCA.testing)
+matrix = confusionMatrix(EM.PCA.pred, EM.PCA.testing$Outcome)
+
+# output results
+cat("Hidden units:", EM.PCA.model$finalModel$tuneValue$size)
+cat("Decay rate:", EM.PCA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+KM.ICA ANN
+----------
+
+```{r KMICAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+KM.ICA.model = train(Outcome ~ ., 
+                  data = KM.ICA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(KM.ICA.model, "models/Perfect_Order_NN_KM_ICA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = KM.ICA.model$finalModel$tuneValue$decay, 
+                           .size = KM.ICA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = KM.ICA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+KM.ICA.pred = predict(KM.ICA.model, KM.ICA.testing)
+matrix = confusionMatrix(KM.ICA.pred, KM.ICA.testing$Outcome)
+
+# output results
+cat("Hidden units:", KM.ICA.model$finalModel$tuneValue$size)
+cat("Decay rate:", KM.ICA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+EM.ICA ANN
+----------
+
+```{r EMICAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+EM.ICA.model = train(Outcome ~ ., 
+                  data = EM.ICA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(EM.ICA.model, "models/Perfect_Order_NN_EM_ICA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = EM.ICA.model$finalModel$tuneValue$decay, 
+                           .size = EM.ICA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = EM.ICA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+EM.ICA.pred = predict(EM.ICA.model, EM.ICA.testing)
+matrix = confusionMatrix(EM.ICA.pred, EM.ICA.testing$Outcome)
+
+# output results
+cat("Hidden units:", EM.ICA.model$finalModel$tuneValue$size)
+cat("Decay rate:", EM.ICA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+KM.RP ANN
+---------
+
+```{r KMRPANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+KM.RP.model = train(Outcome ~ ., 
+                  data = KM.RP.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(KM.RP.model, "models/Perfect_Order_NN_KM_RP.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = KM.RP.model$finalModel$tuneValue$decay, 
+                           .size = KM.RP.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = KM.RP.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+KM.RP.pred = predict(KM.RP.model, KM.RP.testing)
+matrix = confusionMatrix(KM.RP.pred, KM.RP.testing$Outcome)
+
+# output results
+cat("Hidden units:", KM.RP.model$finalModel$tuneValue$size)
+cat("Decay rate:", KM.RP.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+EM.RP ANN
+---------
+
+```{r EMRPANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+EM.RP.model = train(Outcome ~ ., 
+                  data = EM.RP.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(EM.RP.model, "models/Perfect_Order_NN_EM_RP.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = EM.RP.model$finalModel$tuneValue$decay, 
+                           .size = EM.RP.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = EM.RP.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+EM.RP.pred = predict(EM.RP.model, EM.RP.testing)
+matrix = confusionMatrix(EM.RP.pred, EM.RP.testing$Outcome)
+
+# output results
+cat("Hidden units:", EM.RP.model$finalModel$tuneValue$size)
+cat("Decay rate:", EM.RP.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+KM.RFE ANN
+-------
+
+```{r KMRFEANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+KM.RFE.model = train(Outcome ~ ., 
+                  data = KM.RFE.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(KM.RFE.model, "models/Perfect_Order_NN_KM_RFE.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = KM.RFE.model$finalModel$tuneValue$decay, 
+                           .size = KM.RFE.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = KM.RFE.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+KM.RFE.pred = predict(KM.RFE.model, KM.RFE.testing)
+matrix = confusionMatrix(KM.RFE.pred, KM.RFE.testing$Outcome)
+
+# output results
+cat("Hidden units:", KM.RFE.model$finalModel$tuneValue$size)
+cat("Decay rate:", KM.RFE.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+EM.RFE ANN
+-------
+
+```{r EMRFEANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+EM.RFE.model = train(Outcome ~ ., 
+                  data = EM.RFE.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(EM.RFE.model, "models/Perfect_Order_NN_EM_RFE.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = EM.RFE.model$finalModel$tuneValue$decay, 
+                           .size = EM.RFE.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = EM.RFE.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+EM.RFE.pred = predict(EM.RFE.model, EM.RFE.testing)
+matrix = confusionMatrix(EM.RFE.pred, EM.RFE.testing$Outcome)
+
+# output results
+cat("Hidden units:", EM.RFE.model$finalModel$tuneValue$size)
+cat("Decay rate:", EM.RFE.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```

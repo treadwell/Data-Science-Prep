@@ -1,0 +1,27 @@
+---
+title: "Perfect Order Run All Files"
+author: "Ken Brooks"
+date: "April 4, 2015"
+output: pdf_document
+---
+
+Run Perfect Order files sequentially to build optimal models
+
+```{r include=FALSE}
+rm(list = ls())
+
+library(knitr)
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+
+rmarkdown::render(input = "Perfect_Order_DataPrep.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "1_Perfect_Order_Cluster.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "2a_Perfect_Order_PCA.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "2b_Perfect_Order_ICA.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "2c_Perfect_Order_Random_Projection.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "2d_Perfect_Order_FAMD.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "3_Perfect_Order_Cluster_on_PCA.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "4_Perfect_Order_NN_on_PCA.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "5_Perfect_Order_NN_on_Clustered_PCA.Rmd", output_format = "pdf_document")
+
+```
+

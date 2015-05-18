@@ -1,0 +1,333 @@
+---
+title: "1 Cluster Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+
+Observations / To do
+--------------------
+* Read fpc documentation
+* Comment on whether clusters are similar to good or bad orders - do clusters match (or fit cleanly within) labels?
+* Only an 80.8% agreement between the two methods.
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+library(lattice)
+library(ggplot2)
+library(cluster)
+library(NbClust)
+library(mclust)
+library(fpc)
+
+#?kmeans()
+
+```
+
+```{r ImportData, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+
+d = readRDS("models/Perfect_Order_cluster.rds") # scrubbed data set
+#d_scaled = data.frame(scale(d))
+#d_complete_scaled = readRDS("Perfect_Order_cluster_complete.rds")  # unscrubbed, fully scaled
+
+set.seed(250)
+
+```
+
+Elbow Plot
+----------
+The elbow plot shows the decrease in within group sum of square errors as the number of clusters increase.  It is a quick and dirty means of evaluating a good number of clusters to use.  A good candidate for a natural number of clusters is directly after an elbow in the graph, showing, here, either 3 or 8 clusters. 
+
+
+```{r Scree, warning=FALSE}
+wssplot <- function(data, nc=15, seed=1234){
+               wss <- (nrow(data)-1)*sum(apply(data,2,var))
+               for (i in 2:nc){
+                    set.seed(seed)
+                    wss[i] <- sum(kmeans(data, centers=i, nstart = 1000)$withinss)}
+                plot(1:nc, wss, type="b", xlab="Number of Clusters",
+                     ylab="Within groups sum of squares")}
+par(mfrow=c(1,1))
+wssplot(d, nc=25)
+
+
+dev.copy(png,'images/Perfect_Order_Elbow.png')
+dev.off()
+
+```
+
+This analysis analyzes best cluster construction using the 26 indices provided in the _NbClust_ package [^fn-1] in R. _NbClust_ is tuned using the following parameters:
+
+* minimum number of clusters
+* maximum number of clusters
+* method - the type of aggregation to uses.  Since were examining k-means, that is the aggregation method selected
+
+[^fn-1]: Malika Charrad, Nadia Ghazzali, Veronique Boiteau, Azam Niknafs (2014). NbClust: An R Package for Determining the Relevant Number of Clusters in a Data Set. Journal of Statistical Software, 61(6), 1-36. URL http://www.jstatsoft.org/v61/i06/.
+
+```{r NbClust, warning=FALSE}
+
+nc <- NbClust(d, min.nc=2, max.nc=15, method="kmeans")
+# warnings()
+table(nc$Best.n[1,])
+
+par(mfrow=c(1,1))
+barplot(table(nc$Best.n[1,]), 
+          xlab="Number of Clusters", ylab="Number of Criteria",
+          main="Perfect Order Multi-Criterion Cluster Selection")
+
+dev.copy(png,'Perfect_Order_bar.png')
+dev.off()
+
+```
+
+Partition Clustering using K-means
+----------------------------------
+
+We implemented K-means using the native kmeans() method within R using the Hartigan-Wong[^fn-2] algorithm. Kmeans() is tuned using the following parameters:
+
+* Number of clusters
+* Maximum number of iterations (defaults to 10)
+* Number of starts (default = 1)...do more
+* Algorithm (default is Hartigan-Wong)
+
+[^fn-2]: Hartigan, J. A. and Wong, M. A. (1979). A K-means clustering algorithm. Applied Statistics 28, 100–108.
+
+
+```{r KMeans, warning=FALSE}
+fit.km.3 <- kmeans(d, 3, nstart=25) 
+#fit.km.8 <- kmeans(d, 8, nstart=25) 
+
+saveRDS(fit.km.3, "models/Perfect_Order_KM_3_model.rds")
+#saveRDS(fit.km.8, "Perfect_Order_km8_model.rds")
+?table
+
+table(fit.km.3$cluster)
+
+fit.km.3$size
+#fit.km.8$size
+ 
+fit.km.3$centers
+ #fit.km$cluster
+
+aggregate(d, by=list(cluster=fit.km.3$cluster), mean)
+
+# transpose and print this to see what's significant
+
+```
+
+Hierarchical Agglomerative Clustering
+-------------------------------------
+
+This analysis implements Ward's heirarchical agglomerative clustering criterion using the hclust() method in the _cluster_ package[^fn-3] in R. hclust() is tuned using the following parameters:
+
+* Manhattan distance
+* Agglomeration method: ward.D2 method is used to minimize variance and find compact, spherical clusters.
+
+
+[^fn-3]: Murtagh, F. and Legendre, P. (2013). Ward's hierarchical agglomerative clustering method: which algorithms implement Ward's criterion? _Journal of Classification_.
+
+```{r HierAgglom, warning=FALSE}
+# ?hclust()
+par(mfrow=c(1,1))
+distance <- dist(d, method = "manhattan") # distance matrix
+fit.hc <- hclust(distance, method="ward.D2") 
+saveRDS(fit.hc, "Perfect_Order_hc_model.rds")
+plot(fit.hc, labels=FALSE) # display dendogram
+groups <- cutree(fit.hc, k=2) # cut tree into 3 clusters
+# draw dendogram with red borders around the 3 clusters 
+rect.hclust(fit.hc, k=2, border="red")
+dev.copy(png,'Perfect_Order_HAC.png')
+dev.off()
+
+```
+
+Model Based Clustering
+----------------------
+This analysis implements the optimal model according to the Bayes Information Criterion (BIC) for Expectation Maximization (soft) clustering using the _mclust_ package[^fn-4][^fn-5] in R. _Mclust_ is tuned via:
+
+* model type (based on BIC)
+* The number of clusters for which the BIC is to be calculated (here set at the number of features)
+
+Observations / Questions
+------------------------
+* What is the best model type?
+* What is the recommended number of clusters?
+* Do they differ from either k-means or hierarchical agglomerative
+
+[^fn-4]:Chris Fraley, Adrian E. Raftery, T. Brendan Murphy, and Luca Scrucca (2012) mclust Version 4 for R: Normal Mixture Modeling for Model-Based Clustering, Classification, and Density Estimation Technical Report No. 597, Department of Statistics, University of Washington
+
+[^fn-5]:Chris Fraley and Adrian E. Raftery (2002) Model-based Clustering, Discriminant Analysis and Density Estimation, _Journal of the American Statistical Association_, 97:611-631
+
+```{r EMCluster, warning=FALSE}
+# Model Based Clustering
+library(mclust)
+# ?Mclust()
+# fit.em <- Mclust(d)
+fit.em <- Mclust(d, modelNames = c("EII", "VII", "EEI", "EVI", "VEI", "VVI"), G=1:50)
+#fit.em <- Mclust(d, G=3)
+
+dSummary <- summary(fit.em, data = d)
+dSummary
+names(dSummary)
+
+saveRDS(fit.em, "Perfect_Order_EM_model.rds")
+
+par(mfrow=c(1,1))
+plot(fit.em, what="BIC") # plot results 
+dev.copy(png,'images/Perfect_Order_EM.png')
+dev.off()
+
+summary(fit.em) # display the best model
+
+```
+
+Fit EM-3 Model
+--------------
+
+```{r EM3}
+fit.em.3 <- Mclust(d, G=3)
+saveRDS(fit.em.3, "models/Perfect_Order_EM_3_model.rds")
+summary.em.3 <- summary(fit.em.3, data = d)
+
+# EM summary
+table(summary.em.3$classification)
+
+# k-means summary
+table(fit.km.3$cluster)
+
+# k-means versus EM
+table(fit.km.3$cluster, summary.em.3$classification)
+```
+
+Compare KM-3 and EM-3
+---------------------
+
+```{r}
+
+fit.em.3 = readRDS("models/Perfect_Order_EM_3_model.rds")
+fit.km.3 = readRDS("models/Perfect_Order_KM_3_model.rds")
+
+summary.em.3 <- summary(fit.em.3, data = d)
+# EM summary
+table(summary.em.3$classification)
+
+# k-means summary
+table(fit.km.3$cluster)
+
+# k-means versus EM
+table(fit.km.3$cluster, summary.em.3$classification)
+
+
+# 80.8 % agreement
+```
+
+Plotting Cluster Solutions
+--------------------------
+This analysis utilizes the _cluster_[^fn-6] and _fpc_[^fn-7] packages in R. 
+
+[^fn-6]: Maechler, M., Rousseeuw, P., Struyf, A., Hubert, M., Hornik, K.(2014). cluster: Cluster Analysis Basics and Extensions. R package version 1.15.2.
+[^fn-7]: Christian Hennig (2014). fpc: Flexible procedures for clustering. R package version 2.1-9. http://CRAN.R-project.org/package=fpc
+
+```{r ClusterPlots, warning=FALSE}
+d = readRDS("models/Perfect_Order_cluster.rds")
+fit.km.3 = readRDS("models/Perfect_Order_KM_3_model.rds")
+fit.em.3 = readRDS("models/Perfect_Order_EM_3_model.rds")
+
+# KM3 Cluster Plot against 1st 2 principal components
+library(cluster) 
+
+par(mfrow=c(1,1))
+clusplot(d, fit.km.3$cluster, color=TRUE, shade=TRUE, 
+     lines=0, main = "K-Means Cluster Plot")
+dev.copy(png,'images/Perfect_Order_KM_plot.png')
+dev.off()
+
+# EM3 Cluster Plot against 1st 2 principal components
+
+par(mfrow=c(1,1))
+clusplot(d, fit.em.3$classification, color=TRUE, shade=TRUE, 
+     lines=0, main = "EM Cluster Plot")
+dev.copy(png,'images/Perfect_Order_EM_plot.png')
+dev.off()
+
+```
+
+Validating Cluster Solutions
+----------------------------
+
+```{r Validating, warning=FALSE}
+# comparing 2 cluster solutions
+library(fpc)
+cluster.stats(d, fit.km.3$cluster, fit.em$cluster)
+```
+
+Simplified Clusters with no Indicator Variables
+-----------------------------------------------
+```{r numericOnly, warning=FALSE}
+
+str(d)
+d.numeric = dplyr::select(d, LineCount, Units)
+#wssplot(d.numeric)
+
+#nc.numeric <- NbClust(d.numeric, min.nc=2, max.nc=15, method="kmeans")
+# warnings()
+#table(nc.numeric$Best.n[1,])
+
+# par(mfrow=c(1,1))
+# barplot(table(nc.numeric$Best.n[1,]), 
+#           xlab="Number of Clusters", ylab="Number of Criteria",
+#           main="Numeric Variables Multi-Criterion Cluster Selection")
+
+fit.km.num.3 <- kmeans(d, 3, nstart=25) 
+
+fit.em.num.3 = Mclust(d, modelNames = c("EII", "VII", "EEI", "EVI", "VEI", "VVI"), G=3)
+
+em.num.3.Summary <- summary(fit.em.num.3, data = d)
+
+# k-means versus EM
+table(fit.km.num.3$cluster, em.num.3.Summary$classification)
+
+(3345 + 65) / 4420
+```
+
+Overlap with Labels
+-------------------
+
+```{r LabelsVsClusters}
+
+d.with.labels = readRDS("models/Perfect_Order_cluster_with_labels_d.rds")
+fit.km.3 = readRDS("models/Perfect_Order_KM_3_model.rds")
+fit.em.3 = readRDS("models/Perfect_Order_EM_3_model.rds")
+
+# kmeans
+table(d.with.labels$Outcome, fit.km.3$cluster)
+
+# EM
+table(d.with.labels$Outcome, fit.em.3$classification)
+```
+
+
+
+```{r clusterTiming}
+
+library(mclust)
+library(microbenchmark)
+
+d = readRDS("models/Perfect_Order_cluster.rds")
+
+KMtrainingTime = microbenchmark(
+    trashKM <- kmeans(d, 3, nstart=25), 
+    times = 10L)
+
+cat("k-means mean training time:", KMtrainingTime$time[3]/1000000000, "ns")
+
+EMtrainingTime = microbenchmark(
+    trashEM <- Mclust(d, G=3), 
+    times = 10L)
+
+cat("EM mean training time:", EMtrainingTime$time[3]/1000000000, "ns")
+```

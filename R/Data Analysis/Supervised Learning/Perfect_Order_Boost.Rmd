@@ -1,0 +1,99 @@
+---
+title: "Boosted Classification Tree Analysis of Perfect Order Data"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To do
+-----
+* increase shrinkage - done
+* increase interaction depth - done
+* increase iterations / trees - done
+
+Observations
+------------
+* Tree depth is important and related to number of variables
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+#library(RWeka)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+library(neuralnet)
+#library(gbm)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Select and Tune Algorithm
+-------------------------
+
+We are immplementing boosting using the _gbm_ package in R driven through the _caret_ machine learning framework. which utilizes the generalized boosted modeling framework following Friedman’s gradient boosting machine (Friedman, 2001)[^fn-1]. Tuning parameters for gbm include:
+
+* The maximum depth of variable interactions (interaction.depth). 1 implies an additive model, 2 implies a model with up to 2-way interactions, etc.
+* The total number of trees to fit (n.trees). This is equivalent to the number of iterations and the number of basis functions in the additive expansion.
+* The learning rate (shrinkage).
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: J.H. Friedman (2001). “Greedy Function Approximation: A Gradient Boosting Machine,” _Annals of Statistics_ 29(5):1189- 1232.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+```{r tuning, warning=FALSE}
+#summary(training)
+
+# for method = gbm
+search.grid <- expand.grid(.interaction.depth = (1:15), 
+                       .n.trees = (1:10)*100,
+                       .shrinkage = c(.03125, .0625, .125, .25, .5, 1))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+modelTune = train(Outcome ~ ., data = training, 
+                  method = "gbm",
+                  metric = "Kappa",
+                  tuneGrid = search.grid,
+                  verbose = F,
+                  trControl = cvCtrl)
+
+#warnings()
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_Boost_modelTune.rds")
+
+modelTune$finalModel
+
+# plot(rpartTune, scales = list(x = list(log = 10)))
+plot(modelTune)
+
+dev.copy(png,'Boost_PO_Tuning.png')
+dev.off()
+```
+
+Evaluate Algorithm on Test Set
+------------------------------
+Obtain and print confusion matrix and statistics:
+
+```{r predicting, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+```
+

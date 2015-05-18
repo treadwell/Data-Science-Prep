@@ -1,0 +1,38 @@
+---
+title: "Perfect Order Run All Files"
+author: "Ken Brooks"
+date: "January 24, 2015"
+output: pdf_document
+---
+
+Run Perfect Order files sequentially to build optimal models
+
+```{r include=FALSE}
+rm(list = ls())
+
+library(knitr)
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+rmarkdown::render(input = "Perfect_Order_DT.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_NN.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_Boost.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_SVM.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_kNN.Rmd", output_format = "pdf_document")
+
+```
+
+Run Perfect Order Learning Curve files sequentially
+
+```{r include=FALSE}
+rm(list = ls())
+
+library(knitr)
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+rmarkdown::render(input = "Perfect_Order_DT_Learning_Curve.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_NN_Learning_Curve.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_Boost_Learning_Curve.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_SVM_Learning_Curve.Rmd", output_format = "pdf_document")
+rmarkdown::render(input = "Perfect_Order_kNN_Learning_Curve.Rmd", output_format = "pdf_document")
+
+```

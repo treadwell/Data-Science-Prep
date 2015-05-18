@@ -1,0 +1,133 @@
+---
+title: "Neural Net Analysis of Perfect Order Data (using neuralnet)"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* Use _neuralnet_
+* Iterate on _maxit_ to try more epochs
+* Iterate on sample size
+
+Observations
+------------
+* Very simple structure developing
+* Probably related to one variable being most important
+* Do we need multiple layers to really get interaction effects?  Especially non-linear interaction effects?
+* How does decay work?
+* Why is the RFE chart showing up?
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+
+#library(RWeka)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+library(neuralnet)
+#library(gbm)
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+#setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 1")
+
+d = readRDS("Perfect_Order_d.rds")
+training = readRDS("Perfect_Order_training.rds")
+testing = readRDS("Perfect_Order_testing.rds")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Select and Tune Algorithm
+-------------------------
+
+We implemented neural networks using the _neuralnet_ package in R driven by the _caret_ machine learning framework. _Neuralnet_ fits a multi-hidden layer neural network using ...[^fn-1]. _Neuralnet_ is tuned using the following parameters:
+
+* Decay rate of parameters (decay)
+* Number of units in the hidden layer (size)
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: Ripley, B. D. (1996) _Pattern Recognition and Neural Networks_. Cambridge.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+
+```{r tuning, warning=FALSE}
+library(dplyr)
+
+training = cbind(training, class.ind(training$Outcome))
+names(training) = sub(" ","",names(training))
+training = subset(training, select=-c(Outcome, OrderType, DC, CustomerContact, CustomerMaintenance, SalesMarketing, Extc, Backorder, Credit))
+colSums(training)
+
+#training = training[, colSums(abs(training)) != 0]
+str(training)
+
+testing = cbind(testing, class.ind(testing$Outcome))
+names(testing) = sub(" ","",names(testing))
+#testing = subset(testing, select=-Outcome)
+testing = subset(testing, select=-c(Outcome, OrderType, DC))
+
+str(testing)
+
+# try removing factor inputs?
+
+
+
+# for method = nnet
+#search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+#                           .size = c(1, 2, 3, 4, 5, 6, 7))
+
+# for method = neuralnet (regression)
+search.grid <- expand.grid(.layer1 = c(1,2,3,4),
+                           .layer2 = c(1,2,3,4),
+                           .layer3 = c(1,2,3,4))
+
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+#cvCtrl = trainControl(method = "none")
+
+modelTune = train(Fail + Ontime ~ ., 
+                  data = training, 
+                  method = "neuralnet",
+                  algorithm = "backprop",
+                  #maxit = 100,
+                  tuneGrid = search.grid,
+                  #trace = F,
+                  trControl = cvCtrl,
+                  #learningrate = 0.25,
+                  #linout = TRUE)
+                  preProcess = c("center", "scale"))
+warnings()
+modelTune
+
+saveRDS(modelTune, "Perfect_Order_NN2_modelTune.rds")
+
+modelTune$finalModel
+
+plot(modelTune)
+
+dev.copy(png,'NN2_PO_Tuning.png')
+dev.off()
+```
+
+Evaluate Algorithm on Test Set
+------------------------------
+Obtain and print confusion matrix and statistics
+
+```{r predicting, warning=FALSE}
+modelPred = predict(modelTune, testing)
+confusionMatrix(modelPred, testing$Outcome)
+#model.rmse = sqrt(mean((modelPred-testing$Species)^2))
+```
+

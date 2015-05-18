@@ -1,0 +1,32 @@
+---
+title: "Install Packages"
+author: "Ken Brooks"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+```{r echo=FALSE}
+# Install necessary packages 
+
+install.packages("microbenchmark")
+install.packages("xlsx")
+install.packages("plyr")
+install.packages("tidyr")
+install.packages("dplyr")
+install.packages("pROC")
+install.packages("mlbench")
+install.packages("vcd")
+install.packages("lattice")
+install.packages("ggplot2")
+install.packages("partykit", dependencies = TRUE)
+install.packages("RWeka", dependencies = TRUE)
+install.packages("caret")
+install.packages("AppliedPredictiveModeling")
+install.packages("rpart")
+install.packages("nnet")
+install.packages("neuralnet")
+install.packages("RSNNS")
+install.packages("gbm")
+install.packages("kernlab")
+
+```

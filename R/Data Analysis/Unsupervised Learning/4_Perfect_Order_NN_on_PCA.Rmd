@@ -1,0 +1,329 @@
+---
+title: "4 ANN Analysis of Projected Data from Perfect Order Data Set"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+To Do
+-----
+* This uses 5 components. Do more?
+* Does this training and test set match the orignial?  
+* Ideally add PCA to original data, then just select it out to run this analysis
+
+Observations
+------------
+* 
+
+```{r packages, echo=FALSE, warning=FALSE}
+# Load necessary packages 
+library(microbenchmark)
+library(moments)
+library(plyr)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(AppliedPredictiveModeling)
+#library(rpart)
+library(nnet)
+library(neuralnet)
+#library(gbm)
+
+library(cluster)
+library(NbClust)
+library(mclust)
+library(fpc)
+
+```
+
+```{r data, echo=FALSE}
+# Clear workspace and set working directory
+rm(list = ls())
+setwd("/Users/kbrooks/Documents/CS7641 Machine Learning/Assignment 3")
+
+set.seed(250)
+#summary(d)
+
+```
+
+Retrieve and Prepare Data
+-------------------------
+
+```{r PrepData, warning=FALSE}
+
+# Retrieve label data
+labels = readRDS("models/Perfect_Order_labels.rds")
+
+# Retrieve base data without labels
+Full = readRDS("models/Perfect_Order_cluster.rds")
+Full = cbind(Full, labels)
+Full = dplyr::rename(Full,Outcome=labels)
+trainIndex <- createDataPartition(Full$Outcome, p = .8, list = FALSE, times = 1)
+Full.training <- Full[ trainIndex,]
+Full.testing  <- Full[-trainIndex,]
+
+# Retrieve best PCA data
+PCA = readRDS("models/Perfect_Order_pca_model.rds")
+PCA = data.frame(PCA$ind$coord) #      "coord. for the individuals"
+PCA = cbind(PCA, labels)
+PCA = dplyr::rename(PCA,Outcome=labels)
+PCA.training <- PCA[ trainIndex,]
+PCA.testing  <- PCA[-trainIndex,]
+
+# Retrieve best ICA data
+
+ICA = readRDS("models/Perfect_Order_ICA_20_model.rds")
+ICA = data.frame(ICA$S)
+ICA = ICA[,numcolwise(kurtosis)(ICA) > 100]
+ICA = cbind(ICA, labels)
+ICA = dplyr::rename(ICA,Outcome=labels)
+ICA.training <- ICA[ trainIndex,]
+ICA.testing  <- ICA[-trainIndex,]
+
+# Retrieve best RP data
+RP = readRDS("models/Perfect_Order_rp_data.rds")
+RP = cbind(RP, labels)
+RP = dplyr::rename(RP,Outcome=labels)
+RP.training <- RP[ trainIndex,]
+RP.testing  <- RP[-trainIndex,]
+
+# Retrieve best RFE data
+d = readRDS("models/Perfect_Order_cluster.rds")
+RFE = readRDS("models/Perfect_Order_rfe_model.rds")
+RFE = d[,predictors(RFE)]
+RFE = cbind(RFE, labels)
+RFE = dplyr::rename(RFE,Outcome=labels)
+RFE.training <- RFE[ trainIndex,]
+RFE.testing  <- RFE[-trainIndex,]
+
+```
+
+Select and Tune Algorithm
+-------------------------
+
+We implemented neural networks using the _nnet_ package in R driven by the _caret_ machine learning framework. _Nnet_ fits a single-hidden layer neural network with the ability to utilize skip-layer connections[^fn-1]. For a single output with two levels represented by both data sets the model uses entropy fit. _Nnet_ is tuned using the following parameters:
+
+* Decay rate of parameters (decay)
+* Number of units in the hidden layer (size)
+
+This tuning was accomplished using a 10-fold cross-validation repeated three times. In this process observations are split randomly into 10 groups. For each possible combination, a feature set is developed using data from 9 groups before being tested on the tenth “held out” group of observations. Due to the unbalanced classes we are using average Kappa instead of accuracy as the performance metric[^fn-2]. Average Kappa across folds and repetitions is then plotted for each combination of parameters and the best peforming combination selected[^fn-3]
+
+[^fn-1]: Ripley, B. D. (1996) _Pattern Recognition and Neural Networks_. Cambridge.
+[^fn-2]: $\kappa = \frac{O-E}{1-E}$
+[^fn-3]: This approach is equivalent to plotting model complexity learning curve by combiing the results of the training and test sets through averaging across folds and repetitions.
+
+Full Data
+---------
+
+```{r FullANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+Full.model = train(Outcome ~ ., 
+                  data = Full.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(Full.model, "models/Perfect_Order_NN_Full.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = Full.model$finalModel$tuneValue$decay, 
+                           .size = Full.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = Full.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+Full.pred = predict(Full.model, Full.testing)
+matrix = confusionMatrix(Full.pred, Full.testing$Outcome)
+
+# output results
+cat("Hidden units:", Full.model$finalModel$tuneValue$size)
+cat("Decay rate:", Full.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+PCA ANN
+-------
+
+```{r PCAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+PCA.model = train(Outcome ~ ., 
+                  data = PCA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(PCA.model, "models/Perfect_Order_NN_PCA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = PCA.model$finalModel$tuneValue$decay, 
+                           .size = PCA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = PCA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+PCA.pred = predict(PCA.model, PCA.testing)
+matrix = confusionMatrix(PCA.pred, PCA.testing$Outcome)
+
+# output results
+cat("Hidden units:", PCA.model$finalModel$tuneValue$size)
+cat("Decay rate:", PCA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+ICA ANN
+-------
+
+```{r ICAANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+ICA.model = train(Outcome ~ ., 
+                  data = ICA.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(ICA.model, "models/Perfect_Order_NN_ICA.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = ICA.model$finalModel$tuneValue$decay, 
+                           .size = ICA.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = ICA.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+ICA.pred = predict(ICA.model, ICA.testing)
+matrix = confusionMatrix(ICA.pred, ICA.testing$Outcome)
+
+# output results
+cat("Hidden units:", ICA.model$finalModel$tuneValue$size)
+cat("Decay rate:", ICA.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+RP ANN
+------
+
+```{r RPANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+RP.model = train(Outcome ~ ., 
+                  data = RP.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(RP.model, "models/Perfect_Order_NN_RP.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = RP.model$finalModel$tuneValue$decay, 
+                           .size = RP.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = RP.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+RP.pred = predict(RP.model, RP.testing)
+matrix = confusionMatrix(RP.pred, RP.testing$Outcome)
+
+# output results
+cat("Hidden units:", RP.model$finalModel$tuneValue$size)
+cat("Decay rate:", RP.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
+RFE ANN
+-------
+
+```{r RFEANN, warning=FALSE}
+#summary(training)
+
+# for method = nnet
+search.grid <- expand.grid(.decay = c(0.5, 0.4, 0.3, 0.2, 0.1), 
+                           .size = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+
+cvCtrl = trainControl(method = "repeatedcv", repeats = 3)
+
+RFE.model = train(Outcome ~ ., 
+                  data = RFE.training, 
+                  method = "nnet", maxit = 1000,
+                  tuneGrid = search.grid, trace = F,
+                  trControl = cvCtrl, preProcess = c("center", "scale"))
+
+saveRDS(RFE.model, "models/Perfect_Order_NN_RFE.rds")
+
+# run benchmark
+time.grid = expand.grid(.decay = RFE.model$finalModel$tuneValue$decay, 
+                           .size = RFE.model$finalModel$tuneValue$size)
+time.ctrl = trainControl(method = "none")
+
+trainingTime = microbenchmark(
+    train(Outcome ~ ., data = RFE.training, method = "nnet", maxit=100,
+                    tuneGrid = time.grid, trace = F, 
+                    trControl = time.ctrl, preProcess = c("center", "scale")), 
+    times = 10L)
+
+# predict to get accuracy
+RFE.pred = predict(RFE.model, RFE.testing)
+matrix = confusionMatrix(RFE.pred, RFE.testing$Outcome)
+
+# output results
+cat("Hidden units:", RFE.model$finalModel$tuneValue$size)
+cat("Decay rate:", RFE.model$finalModel$tuneValue$decay)
+cat("Text accuracy:", as.numeric(matrix$overall["Accuracy"]))
+cat("Mean training time:", trainingTime$time[3]/1000000000, "ns")
+
+```
+
