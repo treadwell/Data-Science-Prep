@@ -1,0 +1,17 @@
+{
+    "contents" : "#Ted Kwartler\n#Ted@sportsanalytics.org\n#Open Data Science Conference Workshop: Intro to Text Mining using R\n#5-30-2015\n#v8.0 Named Entity Recognition\n\n#Set the working directory\nsetwd(\"~/Documents/ODSC text mining\")\n\n#libraries\n#install.packages(\"openNLP.en\")\n#install.packages(\"openNLPmodels.en\", repos = \"http://datacube.wu.ac.at/\", type = \"source\")\nlibrary(openNLP)\nlibrary(tm)\n\n#Read in the documents and combine into a single source, then tell R its a string\ntext<-read.csv('SFDC_Survey.csv', header=TRUE)\ntext<-as.String(text$Experience.Essay)\n\n#OpenNLP Annotators\npersons <- Maxent_Entity_Annotator(kind = 'person')\nlocations <- Maxent_Entity_Annotator(kind = 'location')\norganizations <- Maxent_Entity_Annotator(kind = 'organization')\nsent.token.annotator <- Maxent_Sent_Token_Annotator(language = \"en\")\nword.token.annotator <- Maxent_Word_Token_Annotator(language = \"en\")\npos.tag.annotator <- Maxent_POS_Tag_Annotator(language = \"en\")\n\n#annotate and apply\nannotations <- annotate(text,\n               list(sent.token.annotator,word.token.annotator,pos.tag.annotator,\n                    persons,locations,organizations))\n\ntext.annotations<-AnnotatedPlainTextDocument(text,annotations)\n\n#Extract Entities\nentities <- function(doc, kind) {\n  s <- doc$content\n  a <- annotations(doc)[[1]]\n  if(hasArg(kind)) {\n    k <- sapply(a$features, `[[`, \"kind\")\n    s[a[k == kind]]\n  } else {\n    s[a[a$type == \"entity\"]]\n  }\n}\n\npeople<-entities(text.annotations, kind = \"person\")\nhead(people)\nlocations<-entities(text.annotations, kind = \"location\")\nhead(locations)\norganization<-entities(text.annotations, kind = \"organization\")\nhead(organization)\n#End",
+    "created" : 1433107586408.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "441816242",
+    "id" : "8A40726C",
+    "lastKnownWriteTime" : 1433358640,
+    "path" : "~/Documents/ODSC text mining/8_SFDC_Open_Langugage_Processing.R",
+    "project_path" : "8_SFDC_Open_Langugage_Processing.R",
+    "properties" : {
+    },
+    "relative_order" : 0,
+    "source_on_save" : false,
+    "type" : "r_source"
+}

@@ -1,0 +1,41 @@
+---
+title: "Untitled"
+author: "Ken Brooks"
+date: "May 29, 2015"
+output: html_document
+---
+
+Prep for Max Kuhn's Predictive Analytics Seminar.
+
+Install packages.
+
+```{r}
+   install.packages(c("caret", "pROC", "rpart", "gbm", "ggplot2", "lattice",
+                      "kernlab", "partykit", "lubridate", "Fahrmeir"),
+                    repos = "http://cran.r-project.org", 
+                    dependencies = c("Depends", "Imports", "Suggests"))
+```
+
+Install other packages
+
+```{r}
+
+install.packages("microbenchmark")
+install.packages("readr")
+install.packages("plyr")
+install.packages("tidyr")
+install.packages("dplyr")
+install.packages("mlbench")
+install.packages("vcd")
+
+install.packages("RWeka", dependencies = TRUE)
+install.packages("AppliedPredictiveModeling")
+install.packages("nnet")
+install.packages("neuralnet")
+install.packages("RSNNS")
+
+
+```
+
+
+
